@@ -165,9 +165,21 @@ function main(config, profileName) {
         "广告过滤": G.ad
     };
     const known = new Set([...config["proxy-groups"].map(g => g.name), "DIRECT", "REJECT", "REJECT-DROP", "PASS"]);
+    const isRuleValid = r => {
+        if (!r || typeof r !== "string") return false;
+        const trimmed = r.trim();
+        if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("//") || trimmed.startsWith(";")) return false;
+        return trimmed.includes(",");
+    };
     const retarget = r => {
-        const parts = String(r).split(",").map(s => s.trim());
-        const idx = parts[parts.length - 1] === "no-resolve" ? parts.length - 2 : parts.length - 1;
+        if (!isRuleValid(r)) return null;
+        const trimmed = r.trim();
+        if (trimmed.toUpperCase().startsWith("MATCH,")) return null;
+        const parts = trimmed.split(",").map(s => s.trim());
+        if (parts.length < 2) return null;
+        const lastPart = parts[parts.length - 1].toLowerCase();
+        const idx = lastPart === "no-resolve" ? parts.length - 2 : parts.length - 1;
+        if (idx < 1) return null;
         const t = parts[idx];
         parts[idx] = known.has(t) ? t : (remap[t] || G.world);
         return parts.join(",");
