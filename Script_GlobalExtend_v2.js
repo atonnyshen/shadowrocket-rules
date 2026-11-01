@@ -20,7 +20,7 @@
 
 function main(config, profileName) {
     if (!config || typeof config !== "object") return {};
-    const allProxies = config.proxies || [];
+    const allProxies = Array.isArray(config.proxies) ? config.proxies : [];
     if (allProxies.length === 0) return config;
 
     // ---------- 1. 基礎參數 ----------
@@ -75,15 +75,30 @@ function main(config, profileName) {
     }
 
     // ---------- 3. 節點池：剔除慢速華南標準中繼、不支援協定與虛擬節點 ----------
-    const name = p => String(p.name || "");
-    const server = p => String(p.server || "");
+    const name = p => (p && typeof p === "object" ? String(p.name || "") : "");
+    const server = p => (p && typeof p === "object" ? String(p.server || "") : "");
     const isRelay = p => /^hn(pro|\.\d+)\./i.test(server(p)) || /tw2\.189\.cn/i.test(server(p));
     const isPseudo = p => /到期|流量|官网|网站|traffic|expire|website/i.test(name(p));
-    const isUnsupported = p => p.network === "ws" || /mieru/i.test(String(p.type || "")) || /\*/.test(name(p));
+    const isUnsupported = p => !p || typeof p !== "object" || p.network === "ws" || /mieru/i.test(String(p.type || "")) || /\*/.test(name(p));
     const isStandardSlow = p => /标准/.test(name(p)) || isRelay(p);
 
-    const validProxies = allProxies.filter(p => !isPseudo(p) && !isUnsupported(p) && !isStandardSlow(p));
-    config.proxies = validProxies.length ? validProxies : allProxies.filter(p => !isUnsupported(p) && !isPseudo(p));
+    const validProxies = allProxies.filter(p => !isUnsupported(p) && !isPseudo(p) && !isStandardSlow(p));
+    const finalProxies = validProxies.length ? validProxies : allProxies.filter(p => !isUnsupported(p) && !isPseudo(p));
+
+    // 保證純美 02 主力永遠排在美國住宅備援之前（防範機場若顛倒節點順序時 fallback 首選漂移）
+    finalProxies.sort((a, b) => {
+        const na = name(a), nb = name(b);
+        const aIsUS = /美国|US|United States/i.test(na);
+        const bIsUS = /美国|US|United States/i.test(nb);
+        if (aIsUS && bIsUS) {
+            const aIs02 = /02/.test(na) && !/住宅|Residential/i.test(na);
+            const bIs02 = /02/.test(nb) && !/住宅|Residential/i.test(nb);
+            if (aIs02 && !bIs02) return -1;
+            if (!aIs02 && bIs02) return 1;
+        }
+        return 0;
+    });
+    config.proxies = finalProxies;
 
     // ---------- 4. 扁平化策略組（收斂為 5 大核心組，對齊 Shadowrocket 成功架構） ----------
     const G = {
@@ -165,24 +180,36 @@ function main(config, profileName) {
         "台湾服务": G.tw,
         "广告过滤": G.ad
     };
+    const remapLower = Object.fromEntries(Object.entries(remap).map(([k, v]) => [k.toLowerCase(), v]));
     const known = new Set([...config["proxy-groups"].map(g => g.name), "DIRECT", "REJECT", "REJECT-DROP", "PASS"]);
+
+    const cleanRuleStr = r => (typeof r === "string" ? r.replace(/\s*(?:#|\/\/|;).*$/, "").trim() : "");
     const isRuleValid = r => {
         if (!r || typeof r !== "string") return false;
-        const trimmed = r.trim();
-        if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("//") || trimmed.startsWith(";")) return false;
-        return trimmed.includes(",");
+        const cleaned = cleanRuleStr(r);
+        if (!cleaned || cleaned.startsWith("#") || cleaned.startsWith("//") || cleaned.startsWith(";")) return false;
+        return cleaned.includes(",");
     };
     const retarget = r => {
         if (!isRuleValid(r)) return null;
-        const trimmed = r.trim();
-        if (trimmed.toUpperCase().startsWith("MATCH,")) return null;
-        const parts = trimmed.split(",").map(s => s.trim());
-        if (parts.length < 2) return null;
+        const cleaned = cleanRuleStr(r);
+        if (cleaned.toUpperCase().startsWith("MATCH,")) return null;
+        const parts = cleaned.split(",").map(s => s.trim());
         const lastPart = parts[parts.length - 1].toLowerCase();
-        const idx = lastPart === "no-resolve" ? parts.length - 2 : parts.length - 1;
-        if (idx < 1) return null;
+        const isNoResolve = lastPart === "no-resolve";
+        // 非 MATCH 規則至少要有 TYPE、VALUE 與 TARGET（若有 no-resolve 則至少 4 個欄位）
+        const idx = isNoResolve ? parts.length - 2 : parts.length - 1;
+        if (idx < 2) return null;
         const t = parts[idx];
-        parts[idx] = known.has(t) ? t : (remap[t] || G.world);
+        const tUpper = t.toUpperCase();
+        if (["DIRECT", "REJECT", "REJECT-DROP", "PASS"].includes(tUpper)) {
+            parts[idx] = tUpper;
+        } else if (known.has(t)) {
+            parts[idx] = t;
+        } else {
+            const tLower = t.toLowerCase();
+            parts[idx] = remapLower[tLower] || G.world;
+        }
         return parts.join(",");
     };
 
@@ -311,7 +338,8 @@ function main(config, profileName) {
 
     const seen = new Set(customRules.map(r => r.toLowerCase()));
     const baseRules = [];
-    for (const raw of (config["rules"] || [])) {
+    const rawRules = Array.isArray(config["rules"]) ? config["rules"] : [];
+    for (const raw of rawRules) {
         const rewritten = retarget(raw);
         if (!rewritten) continue;
         const lower = rewritten.toLowerCase();
