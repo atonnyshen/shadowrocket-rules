@@ -19,6 +19,7 @@
 //      - 全域兜底 MATCH 置於全部自訂與訂閱規則之最末，確保基礎分流規則 100% 生效無死規則。
 
 function main(config, profileName) {
+    if (!config || typeof config !== "object") return {};
     const allProxies = config.proxies || [];
     if (allProxies.length === 0) return config;
 
@@ -262,6 +263,7 @@ function main(config, profileName) {
             "cloudaicompanion.googleapis.com", "proactivebackend-pa.googleapis.com", "developerprofiles-pa.googleapis.com"
         ], G.gemini),
         `DOMAIN,antigravity-unleash.goog,${G.gemini}`,
+        `DOMAIN-SUFFIX,antigravity-unleash.goog,${G.gemini}`,
         `DOMAIN-KEYWORD,antigravity,${G.gemini}`,
         `DOMAIN-KEYWORD,cloudcode,${G.gemini}`,
         `DOMAIN-KEYWORD,aicode,${G.gemini}`,
@@ -308,13 +310,16 @@ function main(config, profileName) {
     ];
 
     const seen = new Set(customRules.map(r => r.toLowerCase()));
-    const baseRules = (config["rules"] || [])
-        .map(retarget)
-        .filter(r => {
-            if (!r) return false;
-            if (r.toUpperCase().startsWith("MATCH,")) return false;
-            return !seen.has(r.toLowerCase());
-        });
+    const baseRules = [];
+    for (const raw of (config["rules"] || [])) {
+        const rewritten = retarget(raw);
+        if (!rewritten) continue;
+        const lower = rewritten.toLowerCase();
+        if (!seen.has(lower)) {
+            seen.add(lower);
+            baseRules.push(rewritten);
+        }
+    }
 
     // 全域兜底 MATCH 置於全部自訂與訂閱規則之最末，確保基礎分流規則 100% 生效無死規則
     config["rules"] = [...customRules, ...baseRules, `MATCH,${G.world}`];
