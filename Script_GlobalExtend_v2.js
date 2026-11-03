@@ -129,8 +129,7 @@ function main(config, profileName) {
         {
             name: G.ai,
             type: "fallback",
-            url: "https://chatgpt.com",
-            "expected-status": 200,
+            url: "https://cp.cloudflare.com/generate_204",
             interval: 180,
             timeout: 3000,
             lazy: false,
@@ -324,8 +323,12 @@ function main(config, profileName) {
             "cursor.sh", "cursor.com", "cursorapi.com", "cursorvm.com", "githubcopilot.com",
             "perplexity.ai", "pplx.ai", "grok.com", "x.ai", "mistral.ai", "cohere.ai", "openrouter.ai", "huggingface.co",
             "genspark.ai", "heygen.ai", "readifyai.com", "immersivetranslate.com", "deepl.com",
-            "v0.dev", "bolt.new", "lovable.dev", "replit.com", "lovart.ai"
+            "v0.dev", "bolt.new", "lovable.dev", "replit.com", "lovart.ai",
+            "arkoselabs.com", "client-api.arkoselabs.com", "openai-api.arkoselabs.com",
+            "statsig.com", "statsigapi.net", "featuregates.org",
+            "livekit.cloud", "turn.livekit.cloud", "webrtc.livekit.cloud"
         ], G.ai),
+        `DOMAIN,challenges.cloudflare.com,${G.ai}`,
         `DOMAIN,m365.cloud.microsoft,${G.ai}`,
         `GEOSITE,category-ai-!cn,${G.ai}`,
         `GEOSITE,openai,${G.ai}`,
