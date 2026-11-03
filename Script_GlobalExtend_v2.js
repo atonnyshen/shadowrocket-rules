@@ -1,10 +1,9 @@
-// Clash Verge Global Extend Script v5.2（2026-11-03 扁平 6 大核心策略組版；獨立 🧠 AI 工作流專區）
+// Clash Verge Global Extend Script v5.3（2026-11-03 扁平 5 大核心策略組版；日常瀏覽與 AI 合併為 🌐 日常與 AI）
 // 重構重點：
-//   1. 策略組結構極簡扁平化（收斂為 6 大核心組，無多層巢狀嵌套）：
+//   1. 策略組結構極簡扁平化（收斂為 5 大核心組，無多層巢狀嵌套）：
 //      - 🔷 Gemini 專區（fallback）：鎖定純美 02 主力與美國合格專線，實質出口 100% 固定在美國本土；探針直連 https://gemini.google.com，指定 expected-status: 200，lazy: true。
-//      - 🧠 AI 工作流（fallback，獨立專區）：專供 OpenAI / ChatGPT、Claude、Typeless 語音輸入、Cursor、Perplexity 等；正則 100% 物理阻斷香港與澳門，優先鎖定台灣 HiNet（語音超低延遲）、日本一線與美西專線備援，固定優先級杜絕會話中途切換 IP。
 //      - 🚀 影音高速（url-test）：專門服務 YouTube、Netflix、Threads、Instagram，納入日本、美西、新加坡大頻寬專線，正則嚴格排除 6Mbps 台灣低頻寬小水管與無效住宅節點。
-//      - 🌐 日常瀏覽（fallback / 智慧直連）：整合 Google 搜尋、海外通用與 FINAL 兜底，100% 完整保留全區專線。
+//      - 🌐 日常與 AI（url-test，整合日常與 AI）：整合 ChatGPT、Claude、Typeless、Cursor、Google 搜尋、海外通用與 FINAL 兜底；正則 100% 物理阻斷香港、澳門與住宅節點，鎖定日台星美低延遲專線，完美對齊 Turnstile 人機驗證防 IP 漂移。
 //      - 🏛️ 台灣政務（select）：DIRECT 直連優先，備援台灣 HiNet 專線。
 //      - 🛑 廣告攔截（select）：REJECT。
 //   2. 全面改採 Mihomo 原生 filter 正則匹配（徹底消除硬編碼）：
@@ -101,12 +100,11 @@ function main(config, profileName) {
     });
     config.proxies = finalProxies;
 
-    // ---------- 4. 扁平化策略組（收斂為 6 大核心組，對齊最佳實踐架構） ----------
+    // ---------- 4. 扁平化策略組（收斂為 5 大核心組，日常瀏覽與 AI 合併） ----------
     const G = {
         gemini: "🔷 Gemini 專區",
-        ai: "🧠 AI 工作流",
         media: "🚀 影音高速",
-        world: "🌐 日常瀏覽",
+        world: "🌐 日常與 AI",
         tw: "🏛️ 台灣政務",
         ad: "🛑 廣告攔截"
     };
@@ -125,19 +123,7 @@ function main(config, profileName) {
             filter: "(?i)(?=.*(美国|US|United States))(?=.*02)",
             "exclude-filter": "(?i)(香港|澳门|澳門|HK|MO|Macau|0[1345]|住宅|Residential)"
         },
-        // 2. 🧠 AI 工作流（fallback）：專門服務 ChatGPT、Claude、Typeless 語音輸入、Cursor 等，100% 阻斷香港
-        {
-            name: G.ai,
-            type: "fallback",
-            url: "https://cp.cloudflare.com/generate_204",
-            interval: 180,
-            timeout: 3000,
-            lazy: false,
-            "include-all": true,
-            filter: "(?i)(台|TW|Taiwan|日|JP|Japan|美|US|United States)",
-            "exclude-filter": "(?i)(香港|澳门|澳門|HK|MO|Macau|0[35]|住宅|Residential)"
-        },
-        // 3. 🚀 影音高速（url-test）：大頻寬日港星美優先，排除台灣小水管與限速美國 02
+        // 2. 🚀 影音高速（url-test）：大頻寬日港星美優先，排除台灣小水管與限速美國 02
         {
             name: G.media,
             type: "url-test",
@@ -150,20 +136,20 @@ function main(config, profileName) {
             filter: "(?i)(日|JP|Japan|港|HK|Hong Kong|新|SG|Singapore|美|US|United States)",
             "exclude-filter": "(?i)(台|TW|Taiwan|住宅|Residential|美国 02|US 02)"
         },
-        // 4. 🌐 日常瀏覽（url-test）：自動選取全區最低延遲活節點，徹底消除網頁載入卡頓
+        // 3. 🌐 日常與 AI（url-test）：全區低延遲日台星美專線，100% 阻斷香港/澳門/住宅防風控，完美對齊 Turnstile 人機驗證
         {
             name: G.world,
             type: "url-test",
-            url: "https://www.gstatic.com/generate_204",
-            interval: 180,
+            url: "https://cp.cloudflare.com/generate_204",
+            interval: 300,
             timeout: 2500,
-            tolerance: 50,
+            tolerance: 100,
             lazy: false,
             "include-all": true,
-            filter: "(?i)(台|TW|Taiwan|日|JP|Japan|新|SG|Singapore|美|US|United States|港|HK|Hong Kong)",
-            "exclude-filter": "(?i)(住宅|Residential|美国 02|US 02)"
+            filter: "(?i)(台|TW|Taiwan|日|JP|Japan|新|SG|Singapore|美|US|United States)",
+            "exclude-filter": "(?i)(香港|澳门|澳門|HK|MO|Macau|住宅|Residential|美国 02|US 02)"
         },
-        // 5. 🏛️ 台灣政務（select）：DIRECT 直連優先，備援台灣專線
+        // 4. 🏛️ 台灣政務（select）：DIRECT 直連優先，備援台灣專線
         {
             name: G.tw,
             type: "select",
@@ -171,7 +157,7 @@ function main(config, profileName) {
             "include-all": true,
             filter: "(?i)(台|TW|Taiwan)"
         },
-        // 6. 🛑 廣告攔截（select）：REJECT
+        // 5. 🛑 廣告攔截（select）：REJECT
         {
             name: G.ad,
             type: "select",
@@ -181,10 +167,10 @@ function main(config, profileName) {
 
     // ---------- 5. 外部訂閱群組重定向 ----------
     const remap = {
-        "ChatGPT": G.ai,
-        "AI": G.ai,
-        "OpenAI": G.ai,
-        "Claude": G.ai,
+        "ChatGPT": G.world,
+        "AI": G.world,
+        "OpenAI": G.world,
+        "Claude": G.world,
         "Gemini": G.gemini,
         "Google": G.world,
         "YouTube": G.media,
@@ -314,7 +300,7 @@ function main(config, profileName) {
         `DOMAIN-KEYWORD,jetski,${G.gemini}`,
         `GEOSITE,google-gemini,${G.gemini}`,
 
-        // 10. 🧠 AI 工作流（OpenAI / ChatGPT / Claude / Typeless 語音輸入 / Cursor / Perplexity 等）
+        // 10. 🌐 日常與 AI（OpenAI / ChatGPT / Claude / Typeless 語音輸入 / Cursor / Perplexity 等）
         ...sfx([
             "openai.com", "chatgpt.com", "oaistatic.com", "oaiusercontent.com", "sora.com",
             "anthropic.com", "claude.ai", "claude.com", "clau.de",
@@ -327,14 +313,12 @@ function main(config, profileName) {
             "arkoselabs.com", "client-api.arkoselabs.com", "openai-api.arkoselabs.com",
             "statsig.com", "statsigapi.net", "featuregates.org",
             "livekit.cloud", "turn.livekit.cloud", "webrtc.livekit.cloud"
-        ], G.ai),
-        `DOMAIN,challenges.cloudflare.com,${G.ai}`,
-        `DOMAIN,m365.cloud.microsoft,${G.ai}`,
-        `GEOSITE,category-ai-!cn,${G.ai}`,
-        `GEOSITE,openai,${G.ai}`,
-        `GEOSITE,anthropic,${G.ai}`,
+        ], G.world),
+        `GEOSITE,category-ai-!cn,${G.world}`,
+        `GEOSITE,openai,${G.world}`,
+        `GEOSITE,anthropic,${G.world}`,
 
-        // 11. 🌐 日常瀏覽：Google 搜尋與通用服務
+        // 11. 🌐 日常與 AI：Google 搜尋與通用服務
         ...sfx([
             "google.com", "google.com.tw", "google.com.hk", "google.co.jp",
             "googleapis.com", "google.dev", "gstatic.com", "googleusercontent.com",
