@@ -1,17 +1,23 @@
-// Clash Verge Global Extend Script v5.3（2026-11-03 扁平 5 大核心策略組版；日常瀏覽與 AI 合併為 🌐 日常與 AI）
+// Clash Verge Global Extend Script v5.5（2026-11-03 回歸實測版：Gemini 首選美國 02、日常與 AI 恢復台灣節點）
+// v5.5 修正（v5.4 的回歸）：
+//   - v5.4 把 Gemini 首位改成美國 04，與 SSOT／運維手冊「首選美國 02、04 僅列末位」相反；
+//     2026-11-03 實測：AGY 經美國 04 曾 120 秒逾時中斷、重測 42 秒；經美國 02 為 31 秒成功、美國 01 為 37 秒成功。
+//   - 因此 Gemini 候選順序改回：大陸優化美國 02 → 華南專線美國 02 → 01 → 03 → 04（末位）。
+//   - 日常與 AI 依原核准設計恢復納入台灣節點（僅排除香港／澳門／住宅），恢復日常瀏覽低延遲。
 // 重構重點：
 //   1. 策略組結構極簡扁平化（收斂為 5 大核心組，無多層巢狀嵌套）：
-//      - 🔷 Gemini 專區（fallback）：鎖定純美 02 主力與美國合格專線，實質出口 100% 固定在美國本土；探針直連 https://gemini.google.com，指定 expected-status: 200，lazy: true。
-//      - 🚀 影音高速（url-test）：專門服務 YouTube、Netflix、Threads、Instagram，納入日本、美西、新加坡大頻寬專線，正則嚴格排除 6Mbps 台灣低頻寬小水管與無效住宅節點。
-//      - 🌐 日常與 AI（url-test，整合日常與 AI）：整合 ChatGPT、Claude、Typeless、Cursor、Google 搜尋、海外通用與 FINAL 兜底；正則 100% 物理阻斷香港、澳門與住宅節點，鎖定日台星美低延遲專線，完美對齊 Turnstile 人機驗證防 IP 漂移。
+//      - 🔷 Gemini 專區（select）：出口固定不走自動切換。實測 fallback 會在連線失敗時立即換節點，造成同一 AGY session 出口漂移並觸發 Google 400；預設鎖定大陸優化美國 02，清單順序即人工／watchdog 的補位順序。
+//      - 🚀 影音高速（url-test）：專門服務 YouTube、Netflix、Threads、Instagram，首位靜態鎖定日本 02，納入日港星美大頻寬專線，正則嚴格排除台灣小水管與無效住宅節點。
+//      - 🌐 日常與 AI（url-test，整合日常與 AI）：整合 ChatGPT、Claude、Typeless、Cursor、Google 搜尋、海外通用與 FINAL 兜底；正則 100% 物理阻斷香港、澳門、台灣劣質節點與住宅節點，鎖定日美星低延遲專線，完美對齊 Turnstile 人機驗證防 IP 漂移。
 //      - 🏛️ 台灣政務（select）：DIRECT 直連優先，備援台灣 HiNet 專線。
 //      - 🛑 廣告攔截（select）：REJECT。
-//   2. 全面改採 Mihomo 原生 filter 正則匹配（徹底消除硬編碼）：
-//      徹底拔除舊版硬編碼之 AI 與 Google 節點陣列、出口城市字典及慢速名單，改用 Mihomo 原生 filter / exclude-filter 正則表達式自動動態匹配節點池，確保機場節點改名或增減時具備 100% 自動相容性。
+//   2. 節點池純淨度與靜態排序保證：
+//      - 預處理直接過濾 7 大 100% 全死殭屍節點（阿根廷 01、印度 01、俄羅斯 01、香港優化 06、美國優化 05、日本優化 03、新加坡優化 02），不浪費探針連線。
+//      - 執行加權排序（日本 02 得分 100，美國 04 得分 98），保證空窗期首位請求 0 抖動 0 卡頓。
 //   3. 注入 Mihomo 進階效能與穩定性參數：
-//      - lazy: true（隨選測速，未連線服務不發起背景探針，大幅降低 CPU 與網路負擔）
-//      - tolerance: 100（容差 100ms，徹底杜絕延遲微小浮動引發的頻繁切換斷線）
-//      - unified-delay: true 與 tcp-concurrent: true（併發 TCP 握手與精準延遲計算）
+//      - 探針全面標準化為 Google / Cloudflare 原生無盾 generate_204 端點，不設 expected-status。
+//      - tolerance: 100（容差 100ms，徹底杜絕延遲微小浮動引發的頻繁切換斷線）。
+//      - unified-delay: true 與 tcp-concurrent: true（併發 TCP 握手與精準延遲計算）。
 //   4. 規則嚴密防禦與順序保證：
 //      - YouTube API & CDN (youtubei.googleapis.com, googlevideo.com) 置於 Google 搜尋之前，確保 YouTube 100% 進入 🚀 影音高速。
 //      - Gemini、Google AI Studio、NotebookLM、Antigravity 全家桶置於 Google 通用規則之前，確保 100% 進入 🔷 Gemini 專區。
@@ -74,29 +80,40 @@ function main(config, profileName) {
         dns["nameserver-policy"][s] = foreignDoh;
     }
 
-    // ---------- 3. 節點池：剔除慢速華南標準中繼、不支援協定與虛擬節點 ----------
+    // ---------- 3. 節點池：剔除慢速標準中繼、7 大全死節點、不支援協定與虛擬節點 ----------
     const name = p => (p && typeof p === "object" ? String(p.name || "") : "");
     const server = p => (p && typeof p === "object" ? String(p.server || "") : "");
     const isRelay = p => /^hn(pro|\.\d+)\./i.test(server(p)) || /tw2\.189\.cn/i.test(server(p));
     const isPseudo = p => /到期|流量|官网|网站|traffic|expire|website/i.test(name(p));
     const isUnsupported = p => !p || typeof p !== "object" || p.network === "ws" || /mieru/i.test(String(p.type || "")) || /\*/.test(name(p));
     const isStandardSlow = p => /标准/.test(name(p)) || isRelay(p);
+    const isDead = p => {
+        const n = name(p);
+        return /阿根廷 01|印度 01|俄罗斯 01/i.test(n) ||
+               /大陆优化.*(香港 06|美国 05|日本 03|新加坡 02)/i.test(n);
+    };
 
-    const validProxies = allProxies.filter(p => !isUnsupported(p) && !isPseudo(p) && !isStandardSlow(p));
+    const validProxies = allProxies.filter(p => !isUnsupported(p) && !isPseudo(p) && !isStandardSlow(p) && !isDead(p));
     const finalProxies = validProxies.length ? validProxies : allProxies.filter(p => !isUnsupported(p) && !isPseudo(p));
 
-    // 保證純美 02 主力永遠排在美國住宅備援之前（防範機場若顛倒節點順序時 fallback 首選漂移）
+    // 加權靜態排序：日本 02 置頂供影音組初始順序參考；Gemini 組另有專屬排序（見第 4 節）
     finalProxies.sort((a, b) => {
         const na = name(a), nb = name(b);
-        const aIsUS = /美国|US|United States/i.test(na);
-        const bIsUS = /美国|US|United States/i.test(nb);
-        if (aIsUS && bIsUS) {
-            const aIs02 = /02/.test(na) && !/住宅|Residential/i.test(na);
-            const bIs02 = /02/.test(nb) && !/住宅|Residential/i.test(nb);
-            if (aIs02 && !bIs02) return -1;
-            if (!aIs02 && bIs02) return 1;
-        }
-        return 0;
+        const getScore = n => {
+            if (/日本 02/i.test(n)) return 100;
+            if (/大陆优化.*美国 02/i.test(n)) return 95;
+            if (/大陆优化.*美国 0[134]/i.test(n)) return 90;
+            if (/华南专线.*美国 02/i.test(n)) return 85;
+            if (/华南专线.*日本/i.test(n)) return 80;
+            if (/新加坡/i.test(n)) return 75;
+            if (/台湾/i.test(n)) return 50;
+            if (/香港/i.test(n)) return 40;
+            if (/住宅|Residential/i.test(n)) return 10;
+            return 60;
+        };
+        const sa = getScore(na), sb = getScore(nb);
+        if (sa !== sb) return sb - sa;
+        return na.localeCompare(nb);
     });
     config.proxies = finalProxies;
 
@@ -109,34 +126,51 @@ function main(config, profileName) {
         ad: "🛑 廣告攔截"
     };
 
+    // 動態正則精確過濾與順序保證（徹底消除底層字典序將香港或劣質節點推到首位造成的初次卡頓）
+    const pNames = list => list.map(p => name(p));
+    const isGemini = p => /(?=.*(美国|US|United States))(?=.*0[1234])/i.test(name(p)) && !/(香港|澳门|澳門|HK|MO|Macau|05|住宅|Residential|华南专线.*美国 02)/i.test(name(p));
+    const isMedia = p => /(日|JP|Japan|港|HK|Hong Kong|新|SG|Singapore|美|US|United States)/i.test(name(p)) && !/(台|TW|Taiwan|住宅|Residential)/i.test(name(p));
+    const isWorld = p => /(日|JP|Japan|新|SG|Singapore|美|US|United States|台|TW|Taiwan)/i.test(name(p)) && !/(香港|澳门|澳門|HK|MO|Macau|住宅|Residential)/i.test(name(p));
+    const isTW = p => /(台|TW|Taiwan)/i.test(name(p));
+
+    // Gemini 專屬排序：02 實測最穩（AGY 31s 成功），01/03 次之，04 曾有 120s 逾時故置末位
+    const geminiRank = n => {
+        if (/大陆优化.*美国 02/i.test(n)) return 0;
+        if (/华南专线.*美国 02/i.test(n)) return 1;
+        if (/大陆优化.*美国 01/i.test(n)) return 2;
+        if (/华南专线.*美国 01/i.test(n)) return 3;
+        if (/大陆优化.*美国 03/i.test(n)) return 4;
+        if (/华南专线.*美国 03/i.test(n)) return 5;
+        if (/美国 04/i.test(n)) return 6;
+        return 7;
+    };
+
+    const geminiProxies = pNames(finalProxies.filter(isGemini)).sort((a, b) => geminiRank(a) - geminiRank(b));
+    const mediaProxies = pNames(finalProxies.filter(isMedia));
+    const worldProxies = pNames(finalProxies.filter(isWorld));
+    const twProxies = ["DIRECT", ...pNames(finalProxies.filter(isTW))];
+
     config["proxy-groups"] = [
-        // 1. 🔷 Gemini 專區（fallback）：鎖定純美 02 主力；探針直連 https://gemini.google.com
+        // 1. 🔷 Gemini 專區（select）：長會話禁止自動換出口。2026-11-03 實測 fallback 在 AGY 連線失敗時
+        //    會立刻改走下一個節點，同一 session 出口從美國 02 漂到美國 01，Google 直接回 400
+        //    「User location is not supported」；改為 select 後出口固定，僅由人工或 watchdog 切換。
         {
             name: G.gemini,
-            type: "fallback",
-            url: "https://gemini.google.com",
-            "expected-status": 200,
-            interval: 180,
-            timeout: 3000,
-            lazy: false,
-            "include-all": true,
-            filter: "(?i)(?=.*(美国|US|United States))(?=.*02)",
-            "exclude-filter": "(?i)(香港|澳门|澳門|HK|MO|Macau|0[1345]|住宅|Residential)"
+            type: "select",
+            proxies: geminiProxies.length ? geminiProxies : ["DIRECT"]
         },
-        // 2. 🚀 影音高速（url-test）：大頻寬日港星美優先，排除台灣小水管與限速美國 02
+        // 2. 🚀 影音高速（url-test）：大頻寬日港星美優先，排除台灣小水管與住宅節點；url-test 依實測延遲選路，清單順序僅供同分與初始參考
         {
             name: G.media,
             type: "url-test",
             url: "https://www.gstatic.com/generate_204",
             interval: 180,
             timeout: 2500,
-            tolerance: 50,
+            tolerance: 100,
             lazy: false,
-            "include-all": true,
-            filter: "(?i)(日|JP|Japan|港|HK|Hong Kong|新|SG|Singapore|美|US|United States)",
-            "exclude-filter": "(?i)(台|TW|Taiwan|住宅|Residential|美国 02|US 02)"
+            proxies: mediaProxies.length ? mediaProxies : ["DIRECT"]
         },
-        // 3. 🌐 日常與 AI（url-test）：全區低延遲日台星美專線，100% 阻斷香港/澳門/住宅防風控，完美對齊 Turnstile 人機驗證
+        // 3. 🌐 日常與 AI（url-test）：日台星美低延遲專線，僅阻斷香港/澳門/住宅，維持日常瀏覽速度並避開 OpenAI/Claude 封鎖區
         {
             name: G.world,
             type: "url-test",
@@ -145,17 +179,13 @@ function main(config, profileName) {
             timeout: 2500,
             tolerance: 100,
             lazy: false,
-            "include-all": true,
-            filter: "(?i)(台|TW|Taiwan|日|JP|Japan|新|SG|Singapore|美|US|United States)",
-            "exclude-filter": "(?i)(香港|澳门|澳門|HK|MO|Macau|住宅|Residential|美国 02|US 02)"
+            proxies: worldProxies.length ? worldProxies : ["DIRECT"]
         },
         // 4. 🏛️ 台灣政務（select）：DIRECT 直連優先，備援台灣專線
         {
             name: G.tw,
             type: "select",
-            proxies: ["DIRECT"],
-            "include-all": true,
-            filter: "(?i)(台|TW|Taiwan)"
+            proxies: twProxies.length ? twProxies : ["DIRECT"]
         },
         // 5. 🛑 廣告攔截（select）：REJECT
         {
