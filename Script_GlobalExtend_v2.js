@@ -112,15 +112,15 @@ function main(config, profileName) {
     };
 
     config["proxy-groups"] = [
-        // 1. 🔷 Gemini 專區（fallback）：鎖定純美 02 主力，備援美國合格專線；探針直連 https://gemini.google.com
+        // 1. 🔷 Gemini 專區（fallback）：鎖定純美 02 主力；探針直連 https://gemini.google.com
         {
             name: G.gemini,
             type: "fallback",
             url: "https://gemini.google.com",
             "expected-status": 200,
-            interval: 300,
-            timeout: 5000,
-            lazy: true,
+            interval: 180,
+            timeout: 3000,
+            lazy: false,
             "include-all": true,
             filter: "(?i)(?=.*(美国|US|United States))(?=.*02)",
             "exclude-filter": "(?i)(香港|澳门|澳門|HK|MO|Macau|0[1345]|住宅|Residential)"
@@ -131,38 +131,38 @@ function main(config, profileName) {
             type: "fallback",
             url: "https://chatgpt.com",
             "expected-status": 200,
-            interval: 300,
-            timeout: 5000,
-            lazy: true,
+            interval: 180,
+            timeout: 3000,
+            lazy: false,
             "include-all": true,
             filter: "(?i)(台|TW|Taiwan|日|JP|Japan|美|US|United States)",
             "exclude-filter": "(?i)(香港|澳门|澳門|HK|MO|Macau|0[35]|住宅|Residential)"
         },
-        // 3. 🚀 影音高速（url-test）：大頻寬日美星港優先，正則嚴格排除 6Mbps 台灣低頻寬小水管
+        // 3. 🚀 影音高速（url-test）：大頻寬日港星美優先，排除台灣小水管與限速美國 02
         {
             name: G.media,
             type: "url-test",
             url: "https://www.gstatic.com/generate_204",
-            interval: 300,
-            timeout: 5000,
-            tolerance: 100,
-            lazy: true,
+            interval: 180,
+            timeout: 2500,
+            tolerance: 50,
+            lazy: false,
             "include-all": true,
-            filter: "(?i)(日|JP|Japan|美|US|United States|新|SG|Singapore|港|HK|Hong Kong)",
-            "exclude-filter": "(?i)(台|TW|Taiwan|住宅|Residential)"
+            filter: "(?i)(日|JP|Japan|港|HK|Hong Kong|新|SG|Singapore|美|US|United States)",
+            "exclude-filter": "(?i)(台|TW|Taiwan|住宅|Residential|美国 02|US 02)"
         },
-        // 4. 🌐 日常瀏覽（fallback / 智慧直連）：整合 Google 搜尋、海外通用與 FINAL 兜底，保留全區專線
+        // 4. 🌐 日常瀏覽（url-test）：自動選取全區最低延遲活節點，徹底消除網頁載入卡頓
         {
             name: G.world,
-            type: "fallback",
+            type: "url-test",
             url: "https://www.gstatic.com/generate_204",
-            interval: 300,
-            timeout: 5000,
-            tolerance: 100,
-            lazy: true,
+            interval: 180,
+            timeout: 2500,
+            tolerance: 50,
+            lazy: false,
             "include-all": true,
             filter: "(?i)(台|TW|Taiwan|日|JP|Japan|新|SG|Singapore|美|US|United States|港|HK|Hong Kong)",
-            "exclude-filter": "(?i)(住宅|Residential)"
+            "exclude-filter": "(?i)(住宅|Residential|美国 02|US 02)"
         },
         // 5. 🏛️ 台灣政務（select）：DIRECT 直連優先，備援台灣專線
         {
