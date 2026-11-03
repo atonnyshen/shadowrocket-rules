@@ -122,8 +122,8 @@ function main(config, profileName) {
             timeout: 5000,
             lazy: true,
             "include-all": true,
-            filter: "(?i)(?=.*(美国|US|United States))(?=.*(02|01|04))",
-            "exclude-filter": "(?i)(香港|澳门|澳門|HK|MO|Macau|0[35]|住宅|Residential)"
+            filter: "(?i)(?=.*(美国|US|United States))(?=.*02)",
+            "exclude-filter": "(?i)(香港|澳门|澳門|HK|MO|Macau|0[1345]|住宅|Residential)"
         },
         // 2. 🧠 AI 工作流（fallback）：專門服務 ChatGPT、Claude、Typeless 語音輸入、Cursor 等，100% 阻斷香港
         {
@@ -304,13 +304,15 @@ function main(config, profileName) {
             "deepmind.google", "bard.google.com", "labs.google",
             "aicode.googleapis.com", "cloudcode-pa.googleapis.com", "daily-cloudcode-pa.googleapis.com",
             "aiplatform.googleapis.com", "generativelanguage.googleapis.com", "alkalimakersuite-pa.googleapis.com",
-            "cloudaicompanion.googleapis.com", "proactivebackend-pa.googleapis.com", "developerprofiles-pa.googleapis.com"
+            "cloudaicompanion.googleapis.com", "proactivebackend-pa.googleapis.com", "developerprofiles-pa.googleapis.com",
+            "jetski-webchannel.googleapis.com"
         ], G.gemini),
         `DOMAIN,antigravity-unleash.goog,${G.gemini}`,
         `DOMAIN-SUFFIX,antigravity-unleash.goog,${G.gemini}`,
         `DOMAIN-KEYWORD,antigravity,${G.gemini}`,
         `DOMAIN-KEYWORD,cloudcode,${G.gemini}`,
         `DOMAIN-KEYWORD,aicode,${G.gemini}`,
+        `DOMAIN-KEYWORD,jetski,${G.gemini}`,
         `GEOSITE,google-gemini,${G.gemini}`,
 
         // 10. 🧠 AI 工作流（OpenAI / ChatGPT / Claude / Typeless 語音輸入 / Cursor / Perplexity 等）
@@ -351,8 +353,8 @@ function main(config, profileName) {
         ...sfx(["line.me", "line-apps.com", "line-scdn.net", "naver.jp", "t.me", "telegram.org",
             "whatsapp.com", "whatsapp.net", "messenger.com", "skype.com", "discord.com", "discord.gg", "discordapp.com"], G.world),
 
-        // 14. 境內 GeoIP 直連
-        "GEOIP,cn,DIRECT"
+        // 14. 境內 GeoIP 直連（防範境內外網域查詢 DNS 阻塞）
+        "GEOIP,cn,DIRECT,no-resolve"
     ];
 
     const seen = new Set(customRules.map(r => r.toLowerCase()));
