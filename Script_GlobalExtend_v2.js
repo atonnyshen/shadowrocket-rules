@@ -1,12 +1,20 @@
-// Clash Verge Global Extend Script v5.5（2026-11-03 回歸實測版：Gemini 首選美國 02、日常與 AI 恢復台灣節點）
+// Clash Verge Global Extend Script v5.6（2026-11-03 晚間：拆出固定出口的 🧠 AI 專區，修正 ChatGPT unusual activity）
 // v5.5 修正（v5.4 的回歸）：
 //   - v5.4 把 Gemini 首位改成美國 04，與 SSOT／運維手冊「首選美國 02、04 僅列末位」相反；
 //     2026-11-03 實測：AGY 經美國 04 曾 120 秒逾時中斷、重測 42 秒；經美國 02 為 31 秒成功、美國 01 為 37 秒成功。
 //   - 因此 Gemini 候選順序改回：大陸優化美國 02 → 華南專線美國 02 → 01 → 03 → 04（末位）。
 //   - 日常與 AI 依原核准設計恢復納入台灣節點（僅排除香港／澳門／住宅），恢復日常瀏覽低延遲。
+// v5.6 修正：
+//   - v5.5 把台灣節點加回「🌐 日常與 AI」後，url-test 於 15:06 把 ChatGPT 出口由美國 04 換到台灣 02，
+//     随後 OpenAI 回報「Unusual activity has been detected from your device」。長會話不能中途換國。
+//   - 拆出 🧠 AI 專區（select，預設美國 04），ChatGPT／Claude／驗證域名固定同一出口；
+//     🌐 日常與 AI 只負責一般瀏覽，仍用 url-test 取低延遲。
+//   - 補回 2026-08-28 session 的四項：APNs 推送群組、sniffer、category-ai-cn、m365。
 // 重構重點：
-//   1. 策略組結構極簡扁平化（收斂為 5 大核心組，無多層巢狀嵌套）：
+//   1. 策略組結構扁平化（5 大業務組 ＋ 🧠 AI 專區 ＋ 🍎 APNs 推送，無多層巢狀）：
 //      - 🔷 Gemini 專區（select）：出口固定不走自動切換。實測 fallback 會在連線失敗時立即換節點，造成同一 AGY session 出口漂移並觸發 Google 400；預設鎖定大陸優化美國 02，清單順序即人工／watchdog 的補位順序。
+//      - 🧠 AI 專區（select）：ChatGPT／Claude／Typeless／Cursor／Turnstile 固定出口，禁止自動換國。
+//      - 🍎 APNs 推送（fallback）：代理優先、DIRECT 兜底。
 //      - 🚀 影音高速（url-test）：專門服務 YouTube、Netflix、Threads、Instagram，首位靜態鎖定日本 02，納入日港星美大頻寬專線，正則嚴格排除台灣小水管與無效住宅節點。
 //      - 🌐 日常與 AI（url-test，整合日常與 AI）：整合 ChatGPT、Claude、Typeless、Cursor、Google 搜尋、海外通用與 FINAL 兜底；正則 100% 物理阻斷香港、澳門、台灣劣質節點與住宅節點，鎖定日美星低延遲專線，完美對齊 Turnstile 人機驗證防 IP 漂移。
 //      - 🏛️ 台灣政務（select）：DIRECT 直連優先，備援台灣 HiNet 專線。
@@ -41,6 +49,24 @@ function main(config, profileName) {
     if (!config["profile"]) config["profile"] = {};
     config["profile"]["store-selected"] = true;
     config["profile"]["store-fake-ip"] = true;
+
+    // Geo 資料庫自動更新（GEOSITE 分類會過期，48 小時同步一次）
+    config["geo-auto-update"] = true;
+    config["geo-update-interval"] = 48;
+
+    // Sniffer（安全模式）：從 TLS SNI / HTTP Host 回收域名，讓自帶 DoH 的 App 也能命中 GEOSITE；
+    // override-destination: false 只影響規則比對，不改寫連線目標。
+    config["sniffer"] = {
+        enable: true,
+        "parse-pure-ip": true,
+        "override-destination": false,
+        sniff: {
+            TLS: { ports: [443, 8443] },
+            HTTP: { ports: [80, "8080-8880"] },
+            QUIC: { ports: [443, 8443] }
+        },
+        "skip-domain": ["+.push.apple.com", "Mijia Cloud"]
+    };
 
     // ---------- 2. DNS：節點網域防污染 + 境外出國雙路 DoH ----------
     if (!config["dns"]) config["dns"] = {};
@@ -120,6 +146,7 @@ function main(config, profileName) {
     // ---------- 4. 扁平化策略組（收斂為 5 大核心組，日常瀏覽與 AI 合併） ----------
     const G = {
         gemini: "🔷 Gemini 專區",
+        ai: "🧠 AI 專區",
         media: "🚀 影音高速",
         world: "🌐 日常與 AI",
         tw: "🏛️ 台灣政務",
@@ -148,6 +175,19 @@ function main(config, profileName) {
     const geminiProxies = pNames(finalProxies.filter(isGemini)).sort((a, b) => geminiRank(a) - geminiRank(b));
     const mediaProxies = pNames(finalProxies.filter(isMedia));
     const worldProxies = pNames(finalProxies.filter(isWorld));
+
+    // AI 專區：固定出口，避免 ChatGPT／Claude 長會話中途換國。首選美國 04（2026-11-03 之前
+    // ChatGPT 穩定的出口），其後美國 02 → 日本 02 → 台灣 02 作為人工補位順序。
+    const isAI = p => /(美国|日本|台湾|US|JP|TW)/i.test(name(p)) && !/(香港|澳门|澳門|HK|MO|Macau|05|住宅|Residential|标准)/i.test(name(p));
+    const aiRank = n => {
+        if (/美国 04/i.test(n)) return 0;
+        if (/美国 02/i.test(n)) return 1;
+        if (/美国 01/i.test(n)) return 2;
+        if (/日本 02/i.test(n)) return 3;
+        if (/台湾 02/i.test(n)) return 4;
+        return 9;
+    };
+    const aiProxies = pNames(finalProxies.filter(isAI)).sort((a, b) => aiRank(a) - aiRank(b)).slice(0, 8);
     const twProxies = ["DIRECT", ...pNames(finalProxies.filter(isTW))];
 
     config["proxy-groups"] = [
@@ -158,6 +198,12 @@ function main(config, profileName) {
             name: G.gemini,
             type: "select",
             proxies: geminiProxies.length ? geminiProxies : ["DIRECT"]
+        },
+        // 1.5 🧠 AI 專區（select）：固定出口，禁止自動切換造成同一會話換國
+        {
+            name: G.ai,
+            type: "select",
+            proxies: aiProxies.length ? aiProxies : ["DIRECT"]
         },
         // 2. 🚀 影音高速（url-test）：大頻寬日港星美優先，排除台灣小水管與住宅節點；url-test 依實測延遲選路，清單順序僅供同分與初始參考
         {
@@ -195,12 +241,26 @@ function main(config, profileName) {
         }
     ];
 
+    // ---------- 4.5 APNs 推送（2026-05 蘋果對大陸 IP 過濾海外 App 推送）----------
+    // fallback：影音高速健康時走代理，節點故障時回落 DIRECT，避免國內 App 推送一起失聯。
+    const apnsGroup = {
+        name: "🍎 APNs 推送",
+        type: "fallback",
+        proxies: [G.media, "DIRECT"],
+        url: "http://www.gstatic.com/generate_204",
+        interval: 300,
+        timeout: 5000
+    };
+    config["proxy-groups"] = config["proxy-groups"].filter(g => g.name !== apnsGroup.name);
+    config["proxy-groups"].unshift(apnsGroup);
+
+
     // ---------- 5. 外部訂閱群組重定向 ----------
     const remap = {
-        "ChatGPT": G.world,
-        "AI": G.world,
-        "OpenAI": G.world,
-        "Claude": G.world,
+        "ChatGPT": G.ai,
+        "AI": G.ai,
+        "OpenAI": G.ai,
+        "Claude": G.ai,
         "Gemini": G.gemini,
         "Google": G.world,
         "YouTube": G.media,
@@ -279,9 +339,21 @@ function main(config, profileName) {
         ...sfx(["bilibili.com", "bilivideo.com", "hdslb.com", "weixin.com", "wechat.com", "qq.com",
             "alipay.com", "taobao.com", "jd.com", "baidu.com", "12306.cn", "meituan.com"], "DIRECT"),
         "GEOSITE,cn,DIRECT",
+        "GEOSITE,category-ai-cn,DIRECT",
 
         // 5. 境外 QUIC 攔截（降級為穩定 TCP TLS 1.3）
         "AND,((NETWORK,UDP),(DST-PORT,443)),REJECT",
+
+        // 5.5 APNs 推送（IP 條必須排在訂閱 IP-CIDR,17.0.0.0/8,DIRECT 之前）
+        `DOMAIN,identity.apple.com,${apnsGroup.name}`,
+        `DOMAIN-SUFFIX,push.apple.com,${apnsGroup.name}`,
+        `DOMAIN-SUFFIX,akadns.net,${apnsGroup.name}`,
+        `DOMAIN-KEYWORD,apple.com.edgekey.net,${apnsGroup.name}`,
+        `IP-CIDR,17.188.128.0/18,${apnsGroup.name},no-resolve`,
+        `IP-CIDR,17.188.20.0/23,${apnsGroup.name},no-resolve`,
+        `IP-CIDR,17.249.0.0/16,${apnsGroup.name},no-resolve`,
+        `IP-CIDR,17.252.0.0/16,${apnsGroup.name},no-resolve`,
+        `IP-CIDR,17.57.144.0/22,${apnsGroup.name},no-resolve`,
 
         // 6. 台灣政務與金融
         ...sfx(["gov.tw", "gov.taipei", "mil.tw", "edu.tw", "hinet.net", "cht.com.tw", "tradevan.com.tw",
@@ -322,6 +394,11 @@ function main(config, profileName) {
             "cloudaicompanion.googleapis.com", "proactivebackend-pa.googleapis.com", "developerprofiles-pa.googleapis.com",
             "jetski-webchannel.googleapis.com"
         ], G.gemini),
+        // 2026-08-28 Copilot session 25510bb4 的結論：AGY 的 OAuth／signaler／play 等
+        // googleapis 子域若走另一個出口，會與 cloudcode-pa 的出口不一致而觸發 400；
+        // 當時以 googleapis.com 毛毯規則修正。v5.4 只列個別子域，等於把這個洞挖回來。
+        `DOMAIN-SUFFIX,googleapis.com,${G.gemini}`,
+        `DOMAIN,accounts.google.com,${G.gemini}`,
         `DOMAIN,antigravity-unleash.goog,${G.gemini}`,
         `DOMAIN-SUFFIX,antigravity-unleash.goog,${G.gemini}`,
         `DOMAIN-KEYWORD,antigravity,${G.gemini}`,
@@ -330,7 +407,7 @@ function main(config, profileName) {
         `DOMAIN-KEYWORD,jetski,${G.gemini}`,
         `GEOSITE,google-gemini,${G.gemini}`,
 
-        // 10. 🌐 日常與 AI（OpenAI / ChatGPT / Claude / Typeless 語音輸入 / Cursor / Perplexity 等）
+        // 10. 🧠 AI 專區（OpenAI / ChatGPT / Claude / Typeless / Cursor / Perplexity 等；固定出口）
         ...sfx([
             "openai.com", "chatgpt.com", "oaistatic.com", "oaiusercontent.com", "sora.com",
             "anthropic.com", "claude.ai", "claude.com", "clau.de",
@@ -343,10 +420,12 @@ function main(config, profileName) {
             "arkoselabs.com", "client-api.arkoselabs.com", "openai-api.arkoselabs.com",
             "statsig.com", "statsigapi.net", "featuregates.org",
             "livekit.cloud", "turn.livekit.cloud", "webrtc.livekit.cloud"
-        ], G.world),
-        `GEOSITE,category-ai-!cn,${G.world}`,
-        `GEOSITE,openai,${G.world}`,
-        `GEOSITE,anthropic,${G.world}`,
+        ], G.ai),
+        `DOMAIN,challenges.cloudflare.com,${G.ai}`,
+        `DOMAIN-SUFFIX,challenges.cloudflare.com,${G.ai}`,
+        `GEOSITE,category-ai-!cn,${G.ai}`,
+        `GEOSITE,openai,${G.ai}`,
+        `GEOSITE,anthropic,${G.ai}`,
 
         // 11. 🌐 日常與 AI：Google 搜尋與通用服務
         ...sfx([
@@ -357,6 +436,7 @@ function main(config, profileName) {
         `DOMAIN-SUFFIX,goog,${G.world}`,
         `DOMAIN-SUFFIX,google,${G.world}`,
         `DOMAIN,accounts.google.com,${G.world}`,
+        `DOMAIN,m365.cloud.microsoft,${G.world}`,
         `GEOSITE,google,${G.world}`,
 
         // 12. Apple 推送直連
