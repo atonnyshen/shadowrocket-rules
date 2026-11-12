@@ -1,15 +1,9 @@
-// Clash Verge Global Extend Script v5.6（2026-11-03 晚間：拆出固定出口的 🧠 AI 專區，修正 ChatGPT unusual activity）
-// v5.5 修正（v5.4 的回歸）：
-//   - v5.4 把 Gemini 首位改成美國 04，與 SSOT／運維手冊「首選美國 02、04 僅列末位」相反；
-//     2026-11-03 實測：AGY 經美國 04 曾 120 秒逾時中斷、重測 42 秒；經美國 02 為 31 秒成功、美國 01 為 37 秒成功。
-//   - 因此 Gemini 候選順序改回：大陸優化美國 02 → 華南專線美國 02 → 01 → 03 → 04（末位）。
-//   - 日常與 AI 依原核准設計恢復納入台灣節點（僅排除香港／澳門／住宅），恢復日常瀏覽低延遲。
-// v5.6 修正：
-//   - v5.5 把台灣節點加回「🌐 日常與 AI」後，url-test 於 15:06 把 ChatGPT 出口由美國 04 換到台灣 02，
-//     随後 OpenAI 回報「Unusual activity has been detected from your device」。長會話不能中途換國。
-//   - 拆出 🧠 AI 專區（select，預設美國 04），ChatGPT／Claude／驗證域名固定同一出口；
-//     🌐 日常與 AI 只負責一般瀏覽，仍用 url-test 取低延遲。
-//   - 補回 2026-08-28 session 的四項：APNs 推送群組、sniffer、category-ai-cn、m365。
+// Clash Verge Global Extend Script v5.7（2026-11-12：收斂策略組命名為「🌐 日常瀏覽」，清理 googleapis/apple 衝突殘留，置頂核心生產力分組）
+// v5.7 修正：
+//   - 策略組名稱由「🌐 日常與 AI」更名為「🌐 日常瀏覽」，終結 AI 拆出後的語意割裂與誤導。
+//   - 清理第 11 節中重複且衝突的 googleapis.com 與 accounts.google.com 宣告，確保 Google API 100% 唯一歸屬「🔷 Gemini 專區」。
+//   - 清理第 12 節中殘留的 Apple 推送直連，統一由第 5.5 節的「🍎 APNs 推送」接管。
+//   - 調整策略組介面排布：置頂核心生產力（Gemini、AI、影音、日常），沉底被動維護組（APNs、廣告），提升手動維護體驗。
 // 重構重點：
 //   1. 策略組結構扁平化（5 大業務組 ＋ 🧠 AI 專區 ＋ 🍎 APNs 推送，無多層巢狀）：
 //      - 🔷 Gemini 專區（select）：出口固定不走自動切換。實測 fallback 會在連線失敗時立即換節點，造成同一 AGY session 出口漂移並觸發 Google 400；預設鎖定大陸優化美國 02，清單順序即人工／watchdog 的補位順序。
@@ -143,12 +137,12 @@ function main(config, profileName) {
     });
     config.proxies = finalProxies;
 
-    // ---------- 4. 扁平化策略組（收斂為 5 大核心組，日常瀏覽與 AI 合併） ----------
+    // ---------- 4. 扁平化策略組（收斂為 5 大核心組，日常瀏覽與 AI 分流） ----------
     const G = {
         gemini: "🔷 Gemini 專區",
         ai: "🧠 AI 專區",
         media: "🚀 影音高速",
-        world: "🌐 日常與 AI",
+        world: "🌐 日常瀏覽",
         tw: "🏛️ 台灣政務",
         ad: "🛑 廣告攔截"
     };
@@ -190,57 +184,6 @@ function main(config, profileName) {
     const aiProxies = pNames(finalProxies.filter(isAI)).sort((a, b) => aiRank(a) - aiRank(b)).slice(0, 8);
     const twProxies = ["DIRECT", ...pNames(finalProxies.filter(isTW))];
 
-    config["proxy-groups"] = [
-        // 1. 🔷 Gemini 專區（select）：長會話禁止自動換出口。2026-11-03 實測 fallback 在 AGY 連線失敗時
-        //    會立刻改走下一個節點，同一 session 出口從美國 02 漂到美國 01，Google 直接回 400
-        //    「User location is not supported」；改為 select 後出口固定，僅由人工或 watchdog 切換。
-        {
-            name: G.gemini,
-            type: "select",
-            proxies: geminiProxies.length ? geminiProxies : ["DIRECT"]
-        },
-        // 1.5 🧠 AI 專區（select）：固定出口，禁止自動切換造成同一會話換國
-        {
-            name: G.ai,
-            type: "select",
-            proxies: aiProxies.length ? aiProxies : ["DIRECT"]
-        },
-        // 2. 🚀 影音高速（url-test）：大頻寬日港星美優先，排除台灣小水管與住宅節點；url-test 依實測延遲選路，清單順序僅供同分與初始參考
-        {
-            name: G.media,
-            type: "url-test",
-            url: "https://www.gstatic.com/generate_204",
-            interval: 180,
-            timeout: 2500,
-            tolerance: 100,
-            lazy: false,
-            proxies: mediaProxies.length ? mediaProxies : ["DIRECT"]
-        },
-        // 3. 🌐 日常與 AI（url-test）：日台星美低延遲專線，僅阻斷香港/澳門/住宅，維持日常瀏覽速度並避開 OpenAI/Claude 封鎖區
-        {
-            name: G.world,
-            type: "url-test",
-            url: "https://cp.cloudflare.com/generate_204",
-            interval: 300,
-            timeout: 2500,
-            tolerance: 100,
-            lazy: false,
-            proxies: worldProxies.length ? worldProxies : ["DIRECT"]
-        },
-        // 4. 🏛️ 台灣政務（select）：DIRECT 直連優先，備援台灣專線
-        {
-            name: G.tw,
-            type: "select",
-            proxies: twProxies.length ? twProxies : ["DIRECT"]
-        },
-        // 5. 🛑 廣告攔截（select）：REJECT
-        {
-            name: G.ad,
-            type: "select",
-            proxies: ["REJECT", "DIRECT"]
-        }
-    ];
-
     // ---------- 4.5 APNs 推送（2026-05 蘋果對大陸 IP 過濾海外 App 推送）----------
     // fallback：影音高速健康時走代理，節點故障時回落 DIRECT，避免國內 App 推送一起失聯。
     const apnsGroup = {
@@ -251,8 +194,59 @@ function main(config, profileName) {
         interval: 300,
         timeout: 5000
     };
-    config["proxy-groups"] = config["proxy-groups"].filter(g => g.name !== apnsGroup.name);
-    config["proxy-groups"].unshift(apnsGroup);
+
+    config["proxy-groups"] = [
+        // 1. 🔷 Gemini 專區（select）：長會話禁止自動換出口。2026-11-03 實測 fallback 在 AGY 連線失敗時
+        //    會立刻改走下一個節點，同一 session 出口從美國 02 漂到美國 01，Google 直接回 400
+        //    「User location is not supported」；改為 select 後出口固定，僅由人工或 watchdog 切換。
+        {
+            name: G.gemini,
+            type: "select",
+            proxies: geminiProxies.length ? geminiProxies : ["DIRECT"]
+        },
+        // 2. 🧠 AI 專區（select）：固定出口，禁止自動切換造成同一會話換國
+        {
+            name: G.ai,
+            type: "select",
+            proxies: aiProxies.length ? aiProxies : ["DIRECT"]
+        },
+        // 3. 🚀 影音高速（url-test）：大頻寬日港星美優先，排除台灣小水管與住宅節點；url-test 依實測延遲選路，清單順序僅供同分與初始參考
+        {
+            name: G.media,
+            type: "url-test",
+            url: "https://www.gstatic.com/generate_204",
+            interval: 180,
+            timeout: 2500,
+            tolerance: 100,
+            lazy: false,
+            proxies: mediaProxies.length ? mediaProxies : ["DIRECT"]
+        },
+        // 4. 🌐 日常瀏覽（url-test）：日台星美低延遲專線，僅阻斷香港/澳門/住宅，維持日常瀏覽速度
+        {
+            name: G.world,
+            type: "url-test",
+            url: "https://cp.cloudflare.com/generate_204",
+            interval: 300,
+            timeout: 2500,
+            tolerance: 100,
+            lazy: false,
+            proxies: worldProxies.length ? worldProxies : ["DIRECT"]
+        },
+        // 5. 🏛️ 台灣政務（select）：DIRECT 直連優先，備援台灣專線
+        {
+            name: G.tw,
+            type: "select",
+            proxies: twProxies.length ? twProxies : ["DIRECT"]
+        },
+        // 6. 🍎 APNs 推送（fallback）：置於被動基礎設施區，避免前台介面遮蔽生產力核心組
+        apnsGroup,
+        // 7. 🛑 廣告攔截（select）：REJECT
+        {
+            name: G.ad,
+            type: "select",
+            proxies: ["REJECT", "DIRECT"]
+        }
+    ];
 
 
     // ---------- 5. 外部訂閱群組重定向 ----------
@@ -427,30 +421,25 @@ function main(config, profileName) {
         `GEOSITE,openai,${G.ai}`,
         `GEOSITE,anthropic,${G.ai}`,
 
-        // 11. 🌐 日常與 AI：Google 搜尋與通用服務
+        // 11. 🌐 日常瀏覽：Google 搜尋與通用服務（排他性收斂：googleapis 嚴格歸屬 Gemini 專區，此處僅放通用服務）
         ...sfx([
             "google.com", "google.com.tw", "google.com.hk", "google.co.jp",
-            "googleapis.com", "google.dev", "gstatic.com", "googleusercontent.com",
+            "google.dev", "gstatic.com", "googleusercontent.com",
             "googlecode.com", "gvt1.com", "1e100.net"
         ], G.world),
         `DOMAIN-SUFFIX,goog,${G.world}`,
         `DOMAIN-SUFFIX,google,${G.world}`,
-        `DOMAIN,accounts.google.com,${G.world}`,
         `DOMAIN,m365.cloud.microsoft,${G.world}`,
         `GEOSITE,google,${G.world}`,
 
-        // 12. Apple 推送直連
-        ...sfx(["push.apple.com"], "DIRECT"),
-        "DOMAIN,identity.apple.com,DIRECT",
-
-        // 13. 通訊（Line / Telegram / WhatsApp 等）
+        // 12. 通訊（Line / Telegram / WhatsApp 等）
         `GEOSITE,line,${G.world}`,
         `GEOSITE,telegram,${G.world}`,
         `GEOSITE,whatsapp,${G.world}`,
         ...sfx(["line.me", "line-apps.com", "line-scdn.net", "naver.jp", "t.me", "telegram.org",
             "whatsapp.com", "whatsapp.net", "messenger.com", "skype.com", "discord.com", "discord.gg", "discordapp.com"], G.world),
 
-        // 14. 境內 GeoIP 直連（防範境內外網域查詢 DNS 阻塞）
+        // 13. 境內 GeoIP 直連（防範境內外網域查詢 DNS 阻塞）
         "GEOIP,cn,DIRECT,no-resolve"
     ];
 
