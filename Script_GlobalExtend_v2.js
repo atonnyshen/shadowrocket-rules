@@ -1,7 +1,8 @@
-// Clash Verge Global Extend Script v5.8（2026-11-12：雙樞紐聯動架構——Gemini 專區與影音高速置頂雙主控，AI 專區純美跟隨防封，日常瀏覽日本大頻寬跟隨）
-// v5.8 修正：
+// Clash Verge Global Extend Script v5.9（2026-11-12：雙樞紐定錨防漂移——Gemini 與影音雙置頂，AI 專區改為 select 靜態鎖定首選 Gemini 專區徹底消滅探針跳節點與 HTTP 421，Typeless 移入影音高速享用日本 160ms 極速轉錄）
+// v5.9 修正：
 //   - 建立雙樞紐聯動架構：前台僅需維護「🔷 Gemini 專區」（美區 AI 主控）與「🚀 影音高速」（日區日常串流主控）兩大入口。
-//   - 「🧠 AI 專區」首選動態穿透綁定「🔷 Gemini 專區」，全域 AI 工具出口保證 100% 一致；備援池嚴格限定純美專線，杜絕跳國被封號。
+//   - 「🧠 AI 專區」首選穿透綁定「🔷 Gemini 專區」，改為「type: select」靜態鎖定，全域 AI 工具出口保證 100% 一致；徹底拔除 fallback 心跳探針，杜絕 Session 期間跨節點跳轉引發的 HTTP 421 與 Anthropic 封號風險。
+//   - 「Typeless」即時語音轉文字自 AI 專區移入「🚀 影音高速」，走日本低延遲一線專線，徹底擺脫跨洋 2500ms 與 AnyTLS 抖動。
 //   - 「🌐 日常瀏覽」首選動態穿透綁定「🚀 影音高速」，常態享用日本一線大頻寬；異常時自動 fallback 至日台星美專線池。
 //   - 策略組視覺順序收斂：Gemini 專區與 影音高速 永遠置頂於介面最上方。
 // 重構重點：
@@ -211,13 +212,10 @@ function main(config, profileName) {
             proxies: mediaProxies.length ? mediaProxies : ["DIRECT"]
         },
         // 3. 🧠 AI 專區（跟隨組 1：首選跟隨 Gemini 專區，保持全域 AI 工具出口一致）
-        //    採用 fallback 容災，平常 100% 走 Gemini 專區；故障時僅回落至純美備援池，絕不跨國。
+        //    採用 select 靜態鎖定出口，首位為「🔷 Gemini 專區」，嚴禁自動切換以杜絕 Session 期間 IP 漂移與 HTTP 421
         {
             name: G.ai,
-            type: "fallback",
-            url: "https://www.gstatic.com/generate_204",
-            interval: 300,
-            timeout: 2500,
+            type: "select",
             proxies: aiProxies
         },
         // 4. 🌐 日常瀏覽（跟隨組 2：首選跟隨 影音高速，享用日本專線大頻寬）
@@ -375,6 +373,8 @@ function main(config, profileName) {
             "x.com", "twitter.com", "twimg.com", "disneyplus.com", "spotify.com",
             "scdn.co", "twitch.tv", "reddit.com", "redd.it"
         ], G.media),
+        // 8.5 即時語音聽寫（Typeless 需低延遲與高吞吐串流，走影音高速日本一線專線）
+        ...sfx(["typeless.com", "typeless-static.com"], G.media),
 
         // 9. 🔷 Gemini 專區（Gemini / Google AI Studio / NotebookLM / Antigravity 純美出口防風控）
         ...sfx([
@@ -403,7 +403,7 @@ function main(config, profileName) {
         ...sfx([
             "openai.com", "chatgpt.com", "oaistatic.com", "oaiusercontent.com", "sora.com",
             "anthropic.com", "claude.ai", "claude.com", "clau.de",
-            "typeless.com", "typeless-static.com", "groq.com", "deepgram.com", "assemblyai.com", "elevenlabs.io",
+            "groq.com", "deepgram.com", "assemblyai.com", "elevenlabs.io",
             "diabrowser.engineering", "diabrowser.com", "dia.xyz", "thebrowser.company", "arc.net",
             "cursor.sh", "cursor.com", "cursorapi.com", "cursorvm.com", "githubcopilot.com",
             "perplexity.ai", "pplx.ai", "grok.com", "x.ai", "mistral.ai", "cohere.ai", "openrouter.ai", "huggingface.co",
