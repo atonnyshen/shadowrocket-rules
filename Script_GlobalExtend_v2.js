@@ -1,10 +1,11 @@
-// Clash Verge Global Extend Script v5.9（2026-11-12：雙樞紐定錨防漂移——Gemini 與影音雙置頂，AI 專區改為 select 靜態鎖定首選 Gemini 專區徹底消滅探針跳節點與 HTTP 421，Typeless 移入影音高速享用日本 160ms 極速轉錄）
-// v5.9 修正：
-//   - 建立雙樞紐聯動架構：前台僅需維護「🔷 Gemini 專區」（美區 AI 主控）與「🚀 影音高速」（日區日常串流主控）兩大入口。
-//   - 「🧠 AI 專區」首選穿透綁定「🔷 Gemini 專區」，改為「type: select」靜態鎖定，全域 AI 工具出口保證 100% 一致；徹底拔除 fallback 心跳探針，杜絕 Session 期間跨節點跳轉引發的 HTTP 421 與 Anthropic 封號風險。
+// Clash Verge Global Extend Script v5.10（2026-11-12：雙樞紐定錨防漂移——核心 AI (Gemini/Claude) 與影音高速雙置頂，Anthropic 全生態納入核心專區鎖定美 02，AI 專區 select 靜態跟隨防 HTTP 421，Typeless 影音高速日本極速轉錄）
+// v5.10 修正：
+//   - 建立雙樞紐聯動架構：前台僅需維護「🔷 核心 AI (Gemini/Claude)」（美區核心 AI 主控）與「🚀 影音高速」（日區日常串流主控）兩大入口。
+//   - 升級「🔷 核心 AI (Gemini/Claude)」：將 Google AI 全家桶與 Anthropic / Claude 全生態（Web/App/API/Artifacts/MCP）合流，100% 鎖定純美美國 02 專線，長連線絕不漂移，與 OpenAI 徹底解耦。
+//   - 「🧠 AI 專區」首選穿透綁定「🔷 核心 AI (Gemini/Claude)」，改為「type: select」靜態鎖定，服務 OpenAI/Cursor/Perplexity 等；徹底拔除 fallback 心跳探針，杜絕 Session 期間跨節點跳轉引發的 HTTP 421。
 //   - 「Typeless」即時語音轉文字自 AI 專區移入「🚀 影音高速」，走日本低延遲一線專線，徹底擺脫跨洋 2500ms 與 AnyTLS 抖動。
 //   - 「🌐 日常瀏覽」首選動態穿透綁定「🚀 影音高速」，常態享用日本一線大頻寬；異常時自動 fallback 至日台星美專線池。
-//   - 策略組視覺順序收斂：Gemini 專區與 影音高速 永遠置頂於介面最上方。
+//   - 策略組視覺順序收斂：核心 AI (Gemini/Claude) 與 影音高速 永遠置頂於介面最上方。
 // 重構重點：
 //   1. 策略組結構扁平化（5 大業務組 ＋ 🧠 AI 專區 ＋ 🍎 APNs 推送，無多層巢狀）：
 //      - 🔷 Gemini 專區（select）：出口固定不走自動切換。實測 fallback 會在連線失敗時立即換節點，造成同一 AGY session 出口漂移並觸發 Google 400；預設鎖定大陸優化美國 02，清單順序即人工／watchdog 的補位順序。
@@ -138,9 +139,9 @@ function main(config, profileName) {
     });
     config.proxies = finalProxies;
 
-    // ---------- 4. 雙樞紐聯動策略組（以 Gemini 專區與 影音高速 為雙主控樞紐） ----------
+    // ---------- 4. 雙樞紐聯動策略組（以 核心 AI 與 影音高速 為雙主控樞紐） ----------
     const G = {
-        gemini: "🔷 Gemini 專區",
+        coreAi: "🔷 核心 AI (Gemini/Claude)",
         media: "🚀 影音高速",
         ai: "🧠 AI 專區",
         world: "🌐 日常瀏覽",
@@ -150,13 +151,13 @@ function main(config, profileName) {
 
     // 動態正則精確過濾與順序保證（徹底消除底層字典序將香港或劣質節點推到首位造成的初次卡頓）
     const pNames = list => list.map(p => name(p));
-    const isGemini = p => /(?=.*(美国|US|United States))(?=.*0[1234])/i.test(name(p)) && !/(香港|澳门|澳門|HK|MO|Macau|05|住宅|Residential|华南专线.*美国 02)/i.test(name(p));
+    const isCoreAi = p => /(?=.*(美国|US|United States))(?=.*0[1234])/i.test(name(p)) && !/(香港|澳门|澳門|HK|MO|Macau|05|住宅|Residential|华南专线.*美国 02)/i.test(name(p));
     const isMedia = p => /(日|JP|Japan|港|HK|Hong Kong|新|SG|Singapore|美|US|United States)/i.test(name(p)) && !/(台|TW|Taiwan|住宅|Residential)/i.test(name(p));
     const isWorld = p => /(日|JP|Japan|新|SG|Singapore|美|US|United States|台|TW|Taiwan)/i.test(name(p)) && !/(香港|澳门|澳門|HK|MO|Macau|住宅|Residential)/i.test(name(p));
     const isTW = p => /(台|TW|Taiwan)/i.test(name(p));
 
-    // Gemini 專屬排序：02 實測最穩（AGY 31s 成功），01/03 次之，04 曾有 120s 逾時故置末位
-    const geminiRank = n => {
+    // 核心 AI 專屬排序：02 實測最穩（AGY 31s 成功），01/03 次之，04 曾有 120s 逾時故置末位
+    const coreAiRank = n => {
         if (/大陆优化.*美国 02/i.test(n)) return 0;
         if (/华南专线.*美国 02/i.test(n)) return 1;
         if (/大陆优化.*美国 01/i.test(n)) return 2;
@@ -167,12 +168,12 @@ function main(config, profileName) {
         return 7;
     };
 
-    const geminiProxies = pNames(finalProxies.filter(isGemini)).sort((a, b) => geminiRank(a) - geminiRank(b));
+    const coreAiProxies = pNames(finalProxies.filter(isCoreAi)).sort((a, b) => coreAiRank(a) - coreAiRank(b));
     const mediaProxies = pNames(finalProxies.filter(isMedia));
 
-    // AI 專區：首選動態穿透綁定「🔷 Gemini 專區」，備援池嚴格限定純美專線（絕對物理排除非美節點，杜絕跳國被封號）
-    const usBackupProxies = geminiProxies.filter(n => !n.includes("美国 02"));
-    const aiProxies = [G.gemini, ...(usBackupProxies.length ? usBackupProxies : ["DIRECT"])];
+    // AI 專區：首選動態穿透綁定「🔷 核心 AI (Gemini/Claude)」，備援池嚴格限定純美專線（絕對物理排除非美節點，杜絕跳國被封號）
+    const usBackupProxies = coreAiProxies.filter(n => !n.includes("美国 02"));
+    const aiProxies = [G.coreAi, ...(usBackupProxies.length ? usBackupProxies : ["DIRECT"])];
 
     // 日常瀏覽：首選動態穿透綁定「🚀 影音高速」（享用日本一線大頻寬），備援池為日台星美專線池
     const worldBackupProxies = pNames(finalProxies.filter(isWorld));
@@ -192,15 +193,15 @@ function main(config, profileName) {
     };
 
     config["proxy-groups"] = [
-        // ⭐ 1. 🔷 Gemini 專區（樞紐 1：全域 AI 核心出口，手動 Select）
-        //    預設鎖定大陸優化美國 02，長會話出口固定，清單順序即容災與人工補位順序。
+        // ⭐ 1. 🔷 核心 AI (Gemini/Claude)（樞紐 1：全域 AI 核心出口，手動 Select）
+        //    Google AI 與 Anthropic 全家桶純美防風控出口，預設鎖定大陸優化美國 02，長會話出口固定，清單順序即容災與人工補位順序。
         {
-            name: G.gemini,
+            name: G.coreAi,
             type: "select",
-            proxies: geminiProxies.length ? geminiProxies : ["DIRECT"]
+            proxies: coreAiProxies.length ? coreAiProxies : ["DIRECT"]
         },
         // ⭐ 2. 🚀 影音高速（樞紐 2：全域串流與日常高速出口，自動 URLTest）
-        //    大頻寬日港星美優先，首位靜態鎖定日本 02，排除台灣低頻寬小水管與住宅節點。
+        //    大頻寬日港星美優先，首位靜態鎖定日本 02，排除台灣低頻寬小水管與住宅節點；涵蓋 Typeless 即時聽寫。
         {
             name: G.media,
             type: "url-test",
@@ -211,8 +212,8 @@ function main(config, profileName) {
             lazy: false,
             proxies: mediaProxies.length ? mediaProxies : ["DIRECT"]
         },
-        // 3. 🧠 AI 專區（跟隨組 1：首選跟隨 Gemini 專區，保持全域 AI 工具出口一致）
-        //    採用 select 靜態鎖定出口，首位為「🔷 Gemini 專區」，嚴禁自動切換以杜絕 Session 期間 IP 漂移與 HTTP 421
+        // 3. 🧠 AI 專區（跟隨組 1：首選跟隨 核心 AI，服務 OpenAI / Cursor 等）
+        //    採用 select 靜態鎖定出口，首位為「🔷 核心 AI (Gemini/Claude)」，嚴禁自動切換以杜絕 Session 期間 IP 漂移與 HTTP 421
         {
             name: G.ai,
             type: "select",
@@ -250,8 +251,9 @@ function main(config, profileName) {
         "ChatGPT": G.ai,
         "AI": G.ai,
         "OpenAI": G.ai,
-        "Claude": G.ai,
-        "Gemini": G.gemini,
+        "Claude": G.coreAi,
+        "Anthropic": G.coreAi,
+        "Gemini": G.coreAi,
         "Google": G.world,
         "YouTube": G.media,
         "海外媒体": G.media, "Netflix": G.media, "Disney+": G.media, "Spotify": G.media,
@@ -376,7 +378,7 @@ function main(config, profileName) {
         // 8.5 即時語音聽寫（Typeless 需低延遲與高吞吐串流，走影音高速日本一線專線）
         ...sfx(["typeless.com", "typeless-static.com"], G.media),
 
-        // 9. 🔷 Gemini 專區（Gemini / Google AI Studio / NotebookLM / Antigravity 純美出口防風控）
+        // 9. 🔷 核心 AI (Gemini/Claude)（Google AI 與 Anthropic 全家桶純美出口防風控）
         ...sfx([
             "antigravity.google", "ai.google.dev", "idx.google.dev", "projectidx.google.dev",
             "gemini.google.com", "aistudio.google.com", "notebooklm.google.com", "notebooklm.google",
@@ -384,25 +386,30 @@ function main(config, profileName) {
             "aicode.googleapis.com", "cloudcode-pa.googleapis.com", "daily-cloudcode-pa.googleapis.com",
             "aiplatform.googleapis.com", "generativelanguage.googleapis.com", "alkalimakersuite-pa.googleapis.com",
             "cloudaicompanion.googleapis.com", "proactivebackend-pa.googleapis.com", "developerprofiles-pa.googleapis.com",
-            "jetski-webchannel.googleapis.com"
-        ], G.gemini),
+            "jetski-webchannel.googleapis.com",
+            // Anthropic & Claude 全生態（Web / Desktop & Mobile App / API / Artifacts / MCP）
+            "anthropic.com", "claude.ai", "claude.com", "claudeusercontent.com", "clau.de",
+            "modelcontextprotocol.io"
+        ], G.coreAi),
         // 2026-08-28 Copilot session 25510bb4 的結論：AGY 的 OAuth／signaler／play 等
         // googleapis 子域若走另一個出口，會與 cloudcode-pa 的出口不一致而觸發 400；
         // 當時以 googleapis.com 毛毯規則修正。v5.4 只列個別子域，等於把這個洞挖回來。
-        `DOMAIN-SUFFIX,googleapis.com,${G.gemini}`,
-        `DOMAIN,accounts.google.com,${G.gemini}`,
-        `DOMAIN,antigravity-unleash.goog,${G.gemini}`,
-        `DOMAIN-SUFFIX,antigravity-unleash.goog,${G.gemini}`,
-        `DOMAIN-KEYWORD,antigravity,${G.gemini}`,
-        `DOMAIN-KEYWORD,cloudcode,${G.gemini}`,
-        `DOMAIN-KEYWORD,aicode,${G.gemini}`,
-        `DOMAIN-KEYWORD,jetski,${G.gemini}`,
-        `GEOSITE,google-gemini,${G.gemini}`,
+        `DOMAIN-SUFFIX,googleapis.com,${G.coreAi}`,
+        `DOMAIN,accounts.google.com,${G.coreAi}`,
+        `DOMAIN,antigravity-unleash.goog,${G.coreAi}`,
+        `DOMAIN-SUFFIX,antigravity-unleash.goog,${G.coreAi}`,
+        `DOMAIN-KEYWORD,antigravity,${G.coreAi}`,
+        `DOMAIN-KEYWORD,cloudcode,${G.coreAi}`,
+        `DOMAIN-KEYWORD,aicode,${G.coreAi}`,
+        `DOMAIN-KEYWORD,jetski,${G.coreAi}`,
+        `DOMAIN-KEYWORD,anthropic,${G.coreAi}`,
+        `DOMAIN-KEYWORD,claude,${G.coreAi}`,
+        `GEOSITE,google-gemini,${G.coreAi}`,
+        `GEOSITE,anthropic,${G.coreAi}`,
 
-        // 10. 🧠 AI 專區（OpenAI / ChatGPT / Claude / Typeless / Cursor / Perplexity 等；固定出口）
+        // 10. 🧠 AI 專區（OpenAI / ChatGPT / Codex / Cursor / Perplexity 等；固定出口）
         ...sfx([
             "openai.com", "chatgpt.com", "oaistatic.com", "oaiusercontent.com", "sora.com",
-            "anthropic.com", "claude.ai", "claude.com", "clau.de",
             "groq.com", "deepgram.com", "assemblyai.com", "elevenlabs.io",
             "diabrowser.engineering", "diabrowser.com", "dia.xyz", "thebrowser.company", "arc.net",
             "cursor.sh", "cursor.com", "cursorapi.com", "cursorvm.com", "githubcopilot.com",
@@ -417,7 +424,6 @@ function main(config, profileName) {
         `DOMAIN-SUFFIX,challenges.cloudflare.com,${G.ai}`,
         `GEOSITE,category-ai-!cn,${G.ai}`,
         `GEOSITE,openai,${G.ai}`,
-        `GEOSITE,anthropic,${G.ai}`,
 
         // 11. 🌐 日常瀏覽：Google 搜尋與通用服務（排他性收斂：googleapis 嚴格歸屬 Gemini 專區，此處僅放通用服務）
         ...sfx([
