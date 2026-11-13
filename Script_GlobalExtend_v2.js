@@ -1,37 +1,14 @@
-// Clash Verge Global Extend Script v5.10（2026-11-12：雙樞紐定錨防漂移——核心 AI (Gemini/Claude) 與影音高速雙置頂，Anthropic 全生態納入核心專區鎖定美 02，AI 專區 select 靜態跟隨防 HTTP 421，Typeless 影音高速日本極速轉錄）
-// v5.10 修正：
-//   - 建立雙樞紐聯動架構：前台僅需維護「🔷 核心 AI (Gemini/Claude)」（美區核心 AI 主控）與「🚀 影音高速」（日區日常串流主控）兩大入口。
-//   - 升級「🔷 核心 AI (Gemini/Claude)」：將 Google AI 全家桶與 Anthropic / Claude 全生態（Web/App/API/Artifacts/MCP）合流，100% 鎖定純美美國 02 專線，長連線絕不漂移，與 OpenAI 徹底解耦。
-//   - 「🧠 AI 專區」首選穿透綁定「🔷 核心 AI (Gemini/Claude)」，改為「type: select」靜態鎖定，服務 OpenAI/Cursor/Perplexity 等；徹底拔除 fallback 心跳探針，杜絕 Session 期間跨節點跳轉引發的 HTTP 421。
-//   - 「Typeless」即時語音轉文字自 AI 專區移入「🚀 影音高速」，走日本低延遲一線專線，徹底擺脫跨洋 2500ms 與 AnyTLS 抖動。
-//   - 「🌐 日常瀏覽」首選動態穿透綁定「🚀 影音高速」，常態享用日本一線大頻寬；異常時自動 fallback 至日台星美專線池。
-//   - 策略組視覺順序收斂：核心 AI (Gemini/Claude) 與 影音高速 永遠置頂於介面最上方。
-// 重構重點：
-//   1. 策略組結構扁平化（5 大業務組 ＋ 🧠 AI 專區 ＋ 🍎 APNs 推送，無多層巢狀）：
-//      - 🔷 Gemini 專區（select）：出口固定不走自動切換。實測 fallback 會在連線失敗時立即換節點，造成同一 AGY session 出口漂移並觸發 Google 400；預設鎖定大陸優化美國 02，清單順序即人工／watchdog 的補位順序。
-//      - 🧠 AI 專區（select）：ChatGPT／Claude／Typeless／Cursor／Turnstile 固定出口，禁止自動換國。
-//      - 🍎 APNs 推送（fallback）：代理優先、DIRECT 兜底。
-//      - 🚀 影音高速（url-test）：專門服務 YouTube、Netflix、Threads、Instagram，首位靜態鎖定日本 02，納入日港星美大頻寬專線，正則嚴格排除台灣小水管與無效住宅節點。
-//      - 🌐 日常與 AI（url-test，整合日常與 AI）：整合 ChatGPT、Claude、Typeless、Cursor、Google 搜尋、海外通用與 FINAL 兜底；正則 100% 物理阻斷香港、澳門、台灣劣質節點與住宅節點，鎖定日美星低延遲專線，完美對齊 Turnstile 人機驗證防 IP 漂移。
-//      - 🏛️ 台灣政務（select）：DIRECT 直連優先，備援台灣 HiNet 專線。
-//      - 🛑 廣告攔截（select）：REJECT。
-//   2. 節點池純淨度與靜態排序保證：
-//      - 預處理直接過濾 7 大 100% 全死殭屍節點（阿根廷 01、印度 01、俄羅斯 01、香港優化 06、美國優化 05、日本優化 03、新加坡優化 02），不浪費探針連線。
-//      - 執行加權排序（日本 02 得分 100，美國 04 得分 98），保證空窗期首位請求 0 抖動 0 卡頓。
-//   3. 注入 Mihomo 進階效能與穩定性參數：
-//      - 探針全面標準化為 Google / Cloudflare 原生無盾 generate_204 端點，不設 expected-status。
-//      - tolerance: 100（容差 100ms，徹底杜絕延遲微小浮動引發的頻繁切換斷線）。
-//      - unified-delay: true 與 tcp-concurrent: true（併發 TCP 握手與精準延遲計算）。
-//   4. 規則嚴密防禦與順序保證：
-//      - YouTube API & CDN (youtubei.googleapis.com, googlevideo.com) 置於 Google 搜尋之前，確保 YouTube 100% 進入 🚀 影音高速。
-//      - Gemini、Google AI Studio、NotebookLM、Antigravity 全家桶置於 Google 通用規則之前，確保 100% 進入 🔷 Gemini 專區。
-//      - 境內大廠原生 HTTP/3 放行，境外 UDP/443 精準攔截降級 TCP TLS 1.3。
-//      - 全域兜底 MATCH 置於全部自訂與訂閱規則之最末，確保基礎分流規則 100% 生效無死規則。
+// Clash Verge Global Extend Script v5.10（2026-11-13：雙樞紐與失敗時阻斷修正）
+// 核心 AI 使用 select，AI 專區預設跟隨；無合格候選時使用 REJECT。
+// 候選篩選依訂閱名稱與既有排除清單，不能證明實際出口地區、IP 類型或節點存活。
+// 影音高速使用 url-test，日常瀏覽使用 fallback；影音可能因探測結果切換節點。
+// Typeless 路由至影音高速，其應用延遲仍需端到端測量。
+// select 只能限制本地策略自動切換，無法保證供應商出口固定、避免 421 或帳號風控。
+// 規則驗證涵蓋關鍵網域與 MATCH 置底，不等於全量語義覆蓋或全平台驗收。
 
 function main(config, profileName) {
     if (!config || typeof config !== "object") return {};
     const allProxies = Array.isArray(config.proxies) ? config.proxies : [];
-    if (allProxies.length === 0) return config;
 
     // ---------- 1. 基礎參數 ----------
     config["ipv6"] = false;
@@ -171,8 +148,8 @@ function main(config, profileName) {
     const coreAiProxies = pNames(finalProxies.filter(isCoreAi)).sort((a, b) => coreAiRank(a) - coreAiRank(b));
     const mediaProxies = pNames(finalProxies.filter(isMedia));
 
-    // AI 專區：首選動態穿透綁定「🔷 核心 AI (Gemini/Claude)」，備援池嚴格限定純美專線（絕對物理排除非美節點，杜絕跳國被封號）
-    // 安全防護：若無可用純美節點，嚴格採用 Fail-Closed (REJECT) 阻斷，杜絕真實 IP 洩漏封號
+    // AI 專區：預設跟隨核心 AI；候選篩選只依節點名稱。
+    // 無合格候選時使用 REJECT，避免此策略自動回落 DIRECT。
     const usBackupProxies = coreAiProxies.filter(n => !n.includes("美国 02"));
     const aiProxies = [G.coreAi, ...(usBackupProxies.length ? usBackupProxies : ["REJECT"])];
 
@@ -182,7 +159,7 @@ function main(config, profileName) {
 
     const twProxies = ["DIRECT", ...pNames(finalProxies.filter(isTW))];
 
-    // ---------- 4.5 APNs 推送（2026-05 蘋果對大陸 IP 過濾海外 App 推送）----------
+    // ---------- 4.5 APNs 推送（代理優先、直連備援）----------
     // fallback：影音高速健康時走代理，節點故障時回落 DIRECT，避免國內 App 推送一起失聯。
     const apnsGroup = {
         name: "🍎 APNs 推送",
@@ -195,7 +172,7 @@ function main(config, profileName) {
 
     config["proxy-groups"] = [
         // ⭐ 1. 🔷 核心 AI (Gemini/Claude)（樞紐 1：全域 AI 核心出口，手動 Select）
-        //    Google AI 與 Anthropic 全家桶純美防風控出口，預設鎖定大陸優化美國 02，長會話出口固定，清單順序即容災與人工補位順序。
+        //    預設優先大陸優化美國 02；既有選擇可能由客戶端保留，需核對執行狀態。
         //    安全防護：無合格美國節點時採取 Fail-Closed (REJECT)，嚴禁無聲直連洩漏真實 IP
         {
             name: G.coreAi,
@@ -215,7 +192,7 @@ function main(config, profileName) {
             proxies: mediaProxies.length ? mediaProxies : ["DIRECT"]
         },
         // 3. 🧠 AI 專區（跟隨組 1：首選跟隨 核心 AI，服務 OpenAI / Cursor 等）
-        //    採用 select 靜態鎖定出口，首位為「🔷 核心 AI (Gemini/Claude)」，嚴禁自動切換以杜絕 Session 期間 IP 漂移與 HTTP 421
+        //    select 首位為核心 AI；不因本組健康探測而自動切換。
         {
             name: G.ai,
             type: "select",
@@ -380,7 +357,7 @@ function main(config, profileName) {
         // 8.5 即時語音聽寫（Typeless 需低延遲與高吞吐串流，走影音高速日本一線專線）
         ...sfx(["typeless.com", "typeless-static.com"], G.media),
 
-        // 9. 🔷 核心 AI (Gemini/Claude)（Google AI 與 Anthropic 全家桶純美出口防風控）
+        // 9. 🔷 核心 AI (Gemini/Claude)（Google AI 與 Anthropic 已知網域共用選定節點）
         ...sfx([
             "antigravity.google", "ai.google.dev", "idx.google.dev", "projectidx.google.dev",
             "gemini.google.com", "aistudio.google.com", "notebooklm.google.com", "notebooklm.google",
@@ -462,7 +439,7 @@ function main(config, profileName) {
         }
     }
 
-    // 全域兜底 MATCH 置於全部自訂與訂閱規則之最末，確保基礎分流規則 100% 生效無死規則
+    // 全域兜底 MATCH 置底；不代表已排除所有規則遮蔽與語義重疊。
     config["rules"] = [...customRules, ...baseRules, `MATCH,${G.world}`];
     return config;
 }
