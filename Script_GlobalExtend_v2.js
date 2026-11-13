@@ -172,8 +172,9 @@ function main(config, profileName) {
     const mediaProxies = pNames(finalProxies.filter(isMedia));
 
     // AI 專區：首選動態穿透綁定「🔷 核心 AI (Gemini/Claude)」，備援池嚴格限定純美專線（絕對物理排除非美節點，杜絕跳國被封號）
+    // 安全防護：若無可用純美節點，嚴格採用 Fail-Closed (REJECT) 阻斷，杜絕真實 IP 洩漏封號
     const usBackupProxies = coreAiProxies.filter(n => !n.includes("美国 02"));
-    const aiProxies = [G.coreAi, ...(usBackupProxies.length ? usBackupProxies : ["DIRECT"])];
+    const aiProxies = [G.coreAi, ...(usBackupProxies.length ? usBackupProxies : ["REJECT"])];
 
     // 日常瀏覽：首選動態穿透綁定「🚀 影音高速」（享用日本一線大頻寬），備援池為日台星美專線池
     const worldBackupProxies = pNames(finalProxies.filter(isWorld));
@@ -195,10 +196,11 @@ function main(config, profileName) {
     config["proxy-groups"] = [
         // ⭐ 1. 🔷 核心 AI (Gemini/Claude)（樞紐 1：全域 AI 核心出口，手動 Select）
         //    Google AI 與 Anthropic 全家桶純美防風控出口，預設鎖定大陸優化美國 02，長會話出口固定，清單順序即容災與人工補位順序。
+        //    安全防護：無合格美國節點時採取 Fail-Closed (REJECT)，嚴禁無聲直連洩漏真實 IP
         {
             name: G.coreAi,
             type: "select",
-            proxies: coreAiProxies.length ? coreAiProxies : ["DIRECT"]
+            proxies: coreAiProxies.length ? coreAiProxies : ["REJECT"]
         },
         // ⭐ 2. 🚀 影音高速（樞紐 2：全域串流與日常高速出口，自動 URLTest）
         //    大頻寬日港星美優先，首位靜態鎖定日本 02，排除台灣低頻寬小水管與住宅節點；涵蓋 Typeless 即時聽寫。
